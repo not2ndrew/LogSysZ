@@ -5,6 +5,7 @@ const testing = std.testing;
 const Pool = core.Pool;
 const Logger = core.Logger;
 const Config = core.Config;
+const FileRotation = core.FileRotation;
 
 const temp_path = "temp.txt";
 const file_config = Config{
@@ -14,8 +15,9 @@ const file_config = Config{
 
 
 // ===== HELPER FUNCTIONS =====
-fn initPoolAndGet() !Pool {
+fn initPoolAndGet() !*Pool {
     try Pool.init(testing.allocator, file_config);
+    Logger.init();
     return try Pool.getPool();
 }
 

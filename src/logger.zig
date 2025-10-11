@@ -1,15 +1,17 @@
 const std = @import("std");
 const con = @import("config.zig");
 const Pool = @import("pool.zig").Pool;
+const FileRotation = @import("log_rotation.zig").FileRotation{};
 
-const Mutex = std.Thread.Mutex{};
+const Output = con.Config.Output;
+const Config = con.Config{};
 
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
 const time = std.time;
 
-const Output = con.Config.Output;
-const Config = con.Config{};
+var Mutex = std.Thread.Mutex{};
+var writer: File.Writer = undefined;
 
 pub const Logger = struct {
     pub const Level = enum {
@@ -19,6 +21,11 @@ pub const Logger = struct {
         ERROR,
         FATAL,
     };
+
+    pub fn init() void {
+        const pool = Pool.getPool() catch return; 
+        writer = std.fs.File.Writer.init(pool.file, pool.buffer);
+    }
 
     pub fn debug(comptime fmt: []const u8, comptime args: anytype) void {
         log(Level.DEBUG, fmt, args);
@@ -44,6 +51,18 @@ pub const Logger = struct {
     // [YYYY-MM-DD Hour:Minutes:Seconds] [Level] [Log Message]
     pub fn log(comptime level: Level, comptime fmt: []const u8, comptime args: anytype) void {
         if (@intFromEnum(level) < @intFromEnum(Config.min_level)) return;
+        const pool = Pool.getPool() catch return;
+
+        if (pool.owns_file) {
+            // Update the writer's pos to the end of the file.
+            const file_size = pool.file.getEndPos() catch return;
+            writer.pos = file_size;
+
+            if (file_size > FileRotation.max_file_size) {
+                std.debug.print("Log exceeded file size\n", .{});
+                return;
+            }
+        }
 
         Mutex.lock();
         defer Mutex.unlock();
@@ -51,9 +70,6 @@ pub const Logger = struct {
         var date_buf: [10]u8 = undefined;
         var time_buf: [8]u8 = undefined;
         getCurrentDateTime(&date_buf, &time_buf);
-
-        const pool = Pool.getPool() catch return;
-        var writer = std.fs.File.Writer.init(pool.file, pool.buffer);
 
         const writer_interface = &writer.interface;
 

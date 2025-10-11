@@ -1,6 +1,7 @@
 const std = @import("std");
 const con = @import("config.zig");
 const logger = @import("logger.zig");
+const rotation = @import("log_rotation.zig").FileRotation{};
 
 const Allocator = std.mem.Allocator;
 
@@ -16,7 +17,7 @@ pub const PoolError = error {
 };
 
 pub var initialized = false;
-pub var pool: Pool = undefined;
+var pool: Pool = undefined;
 
 pub const Pool = struct {
     file: std.fs.File,
@@ -65,8 +66,8 @@ pub const Pool = struct {
         if (self.owns_file) self.file.close();
     }
 
-    pub fn getPool() !Pool {
+    pub fn getPool() !*Pool {
         if (!initialized) return PoolError.PoolNotCreatedYet;
-        return pool;
+        return &pool;
     }
 };
