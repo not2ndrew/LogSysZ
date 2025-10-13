@@ -4,6 +4,7 @@ const logger = @import("logger.zig");
 const rotation = @import("log_rotation.zig").FileRotation{};
 
 const Allocator = std.mem.Allocator;
+const File = std.fs.File;
 
 const Logger = logger.Logger;
 
@@ -20,20 +21,20 @@ pub var initialized = false;
 var pool: Pool = undefined;
 
 pub const Pool = struct {
-    file: std.fs.File,
+    writer: File.Writer,
+    writer_buffer: []u8,
+    file: File,
     config: Config,
     allocator: Allocator,
-    buffer: []u8,
     owns_file: bool,
 
     pub fn init(allocator: Allocator, config: Config) !void {
         if (initialized) return PoolError.PoolAlreadyCreated;
 
         initialized = true;
-        const buffer = try allocator.alloc(u8, config.buffer_size);
-        errdefer allocator.free(buffer);
 
-        const File = std.fs.File;
+        const writer_buffer = try allocator.alloc(u8, config.buffer_size);
+        errdefer allocator.free(writer_buffer);
 
         const file = switch (config.output) {
             Output.stderr => File.stderr(),
@@ -44,16 +45,21 @@ pub const Pool = struct {
             }
         };
 
+        var writer = File.Writer.init(file, writer_buffer);
+
         const owns_file = switch (config.output) {
             Output.file => true,
             else => false,
         };
 
+        if (owns_file) writer.pos = try file.getEndPos();
+
         pool = Pool{
+            .writer = writer,
+            .writer_buffer = writer_buffer,
             .file = file,
             .config = config,
             .allocator = allocator,
-            .buffer = buffer,
             .owns_file = owns_file,
         };
     }
@@ -62,7 +68,7 @@ pub const Pool = struct {
         if (!initialized) return;
 
         initialized = false;
-        self.allocator.free(self.buffer);
+        self.allocator.free(self.writer_buffer);
         if (self.owns_file) self.file.close();
     }
 

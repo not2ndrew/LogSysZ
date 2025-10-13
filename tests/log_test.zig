@@ -5,7 +5,6 @@ const testing = std.testing;
 const Pool = core.Pool;
 const Logger = core.Logger;
 const Config = core.Config;
-const FileRotation = core.FileRotation;
 
 const temp_path = "temp.txt";
 const file_config = Config{

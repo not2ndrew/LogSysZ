@@ -12,10 +12,9 @@ pub fn main() !void {
 
     const allocator = debugAlloc.allocator();
 
-    const new_config = con.Config{ .output = con.Config.Output{ .file = "main.txt" } };
+    const new_config = con.Config{ .output = con.Config.Output{ .file = "log.txt" } };
 
     try Pool.init(allocator, new_config);
-    Logger.init();
 
     var pool = try Pool.getPool();
     defer pool.deinit();

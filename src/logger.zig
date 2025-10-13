@@ -1,7 +1,7 @@
 const std = @import("std");
 const con = @import("config.zig");
 const Pool = @import("pool.zig").Pool;
-const FileRotation = @import("log_rotation.zig").FileRotation{};
+var RotationConfig = @import("log_rotation.zig").RotationConfig{};
 
 const Output = con.Config.Output;
 const Config = con.Config{};
@@ -11,9 +11,11 @@ const File = std.fs.File;
 const time = std.time;
 
 var Mutex = std.Thread.Mutex{};
-var writer: File.Writer = undefined;
 
 pub const Logger = struct {
+    var cached_timestamp: [19]u8 = undefined; // "[YYYY-MM-DD HH:MM:SS]"
+    var cached_seconds: i64 = 0;
+
     pub const Level = enum {
         DEBUG,
         INFO,
@@ -21,11 +23,6 @@ pub const Logger = struct {
         ERROR,
         FATAL,
     };
-
-    pub fn init() void {
-        const pool = Pool.getPool() catch return; 
-        writer = std.fs.File.Writer.init(pool.file, pool.buffer);
-    }
 
     pub fn debug(comptime fmt: []const u8, comptime args: anytype) void {
         log(Level.DEBUG, fmt, args);
@@ -48,32 +45,29 @@ pub const Logger = struct {
     }
 
     // The general format of each Log Message should be
-    // [YYYY-MM-DD Hour:Minutes:Seconds] [Level] [Log Message]
+    // [Year-Month-Day Hour:Minutes:Seconds] [Level] [Log Message]
     pub fn log(comptime level: Level, comptime fmt: []const u8, comptime args: anytype) void {
         if (@intFromEnum(level) < @intFromEnum(Config.min_level)) return;
         const pool = Pool.getPool() catch return;
 
         if (pool.owns_file) {
-            // Update the writer's pos to the end of the file.
             const file_size = pool.file.getEndPos() catch return;
-            writer.pos = file_size;
 
-            if (file_size > FileRotation.max_file_size) {
-                std.debug.print("Log exceeded file size\n", .{});
-                return;
+            if (file_size > RotationConfig.max_file_size) {
+                RotationConfig.fileRotation(pool.allocator) catch return;
+                // std.debug.print("Log exceeded file size\n", .{});
+                // return;
             }
         }
 
         Mutex.lock();
         defer Mutex.unlock();
 
-        var date_buf: [10]u8 = undefined;
-        var time_buf: [8]u8 = undefined;
-        getCurrentDateTime(&date_buf, &time_buf);
+        getCachedDateTime();
 
-        const writer_interface = &writer.interface;
+        const writer_interface = &pool.writer.interface;
 
-        writer_interface.print("[{s} {s}] [{s}]: ", .{date_buf, time_buf, @tagName(level)}) catch {
+        writer_interface.print("[{s} {s}] [{s}]: ", .{cached_timestamp[0..10], cached_timestamp[11..], @tagName(level)}) catch {
             std.debug.print("Writing Date-Time Error\n", .{});
             return;
         };
@@ -88,15 +82,19 @@ pub const Logger = struct {
 
     /// This modifies the date buffer and time buffer to UTC time relative to UTC 1970-01-01.\n
     /// Make sure the amount of bytes used for date_buf and time_buf is 10 and 8 respectively.
-    fn getCurrentDateTime(date_buf: []u8, time_buf: []u8) void {
-        const timestamp = time.timestamp();
-        const int_timestamp: u64 = @intCast(timestamp);
+    fn getCachedDateTime() void {
+        const now = time.timestamp();
 
-        getDate(date_buf, int_timestamp);
-        getTime(time_buf, int_timestamp);
+        if (now != cached_seconds) {
+            const int_now: u64 = @intCast(now);
+
+            getDate(cached_timestamp[0..10], int_now);
+            getTime(cached_timestamp[11..], int_now);
+            cached_timestamp[10] = ' ';
+        }
     }
 
-    // The format of time is [HH:MM:SS]
+    // The format of time is HH:MM:SS
     fn getTime(buf: []u8, timestamp: u64) void {
         const s_per_min = time.s_per_min;
         const s_per_hour = time.s_per_hour;
@@ -119,7 +117,7 @@ pub const Logger = struct {
         writeTwoDigits(buf, 6, sec);
     }
 
-    // The format of date is [YYYY-MM-DD]
+    // The format of date is YYYY-MM-DD
     fn getDate(buf: []u8, timestamp: u64) void {
         const s_per_day = time.s_per_day;
         const epoch_year = time.epoch.epoch_year;
@@ -129,6 +127,7 @@ pub const Logger = struct {
 
         const current_year: u16 = @truncate(epoch_year + days_since_epoch / 365);
 
+        // TODO: Not every month is 30 days long.
         const current_month: u8 = @truncate(remaining_days / 30);
         const month: time.epoch.Month = @enumFromInt(current_month);
         const days_per_month = time.epoch.getDaysInMonth(current_year, month);
