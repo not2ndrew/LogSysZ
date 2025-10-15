@@ -47,11 +47,6 @@ pub const Logger = struct {
         const pool = Pool.getPool() catch return;
         if (@intFromEnum(level) < @intFromEnum(pool.config.min_level)) return;
 
-        switch (pool.config.format) {
-            Format.standard => {}, // Create a standard log
-            Format.json => {}, // Create a JSON log
-        }
-
         switch (pool.config.output) {
             Output.file => |file_name| {
                 const file_size = pool.file.getEndPos() catch return;
