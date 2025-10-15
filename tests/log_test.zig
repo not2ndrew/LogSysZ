@@ -6,8 +6,11 @@ const Pool = core.Pool;
 const Logger = core.Logger;
 const Config = core.Config;
 
+const Level = Logger.Level;
+
 const temp_path = "temp.txt";
 const file_config = Config{
+    .min_level = Level.INFO,
     .buffer_size = 100,
     .output = Config.Output{ .file = temp_path },
 };
@@ -16,7 +19,6 @@ const file_config = Config{
 // ===== HELPER FUNCTIONS =====
 fn initPoolAndGet() !*Pool {
     try Pool.init(testing.allocator, file_config);
-    Logger.init();
     return try Pool.getPool();
 }
 
@@ -48,7 +50,7 @@ test "Intialize Pool" {
     var pool = try initPoolAndGet();
     defer pool.deinit();
 
-    try testing.expectEqual(pool.buffer.len, 100);
+    try testing.expectEqual(pool.writer.interface.buffer.len, 100);
     try testing.expect(pool.owns_file);
 }
 
@@ -59,11 +61,29 @@ test "Logger Writes to File" {
     var pool = try initPoolAndGet();
     defer pool.deinit();
 
-    Logger.info("Hello World", .{});
+    Logger.info("Hello World\n", .{});
 
     const contents = try readFileContents(testing.allocator);
     defer testing.allocator.free(contents);
 
     const found = std.mem.containsAtLeast(u8, contents, 1, "Hello World");
     try testing.expect(found);
+}
+
+test "Changing Config Level" {
+    const config = Config{
+        .min_level = Level.INFO,
+        .buffer_size = 50,
+        .output = Config.Output.stdout, 
+    };
+
+    try Pool.init(testing.allocator, config);
+    var pool = try Pool.getPool();
+    defer pool.deinit();
+
+    try testing.expect(std.mem.eql(u8, @tagName(pool.config.min_level), @tagName(Level.INFO)));
+
+    pool.config.min_level = Level.ERROR;
+
+    try testing.expect(std.mem.eql(u8, @tagName(pool.config.min_level), @tagName(Level.ERROR)));
 }

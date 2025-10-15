@@ -1,10 +1,9 @@
 const std = @import("std");
 const con = @import("config.zig");
 const Pool = @import("pool.zig").Pool;
-var RotationConfig = @import("log_rotation.zig").RotationConfig{};
+var RotationConfig = @import("rotation.zig").RotationConfig{};
 
 const Output = con.Config.Output;
-const Config = con.Config{};
 
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
@@ -13,7 +12,7 @@ const time = std.time;
 var Mutex = std.Thread.Mutex{};
 
 pub const Logger = struct {
-    var cached_timestamp: [19]u8 = undefined; // "[YYYY-MM-DD HH:MM:SS]"
+    var cached_timestamp: [19]u8 = undefined; // Format is "[YYYY-MM-DD HH:MM:SS]"
     var cached_seconds: i64 = 0;
 
     pub const Level = enum {
@@ -44,20 +43,24 @@ pub const Logger = struct {
         log(Level.FATAL, fmt, args);
     }
 
-    // The general format of each Log Message should be
-    // [Year-Month-Day Hour:Minutes:Seconds] [Level] [Log Message]
     pub fn log(comptime level: Level, comptime fmt: []const u8, comptime args: anytype) void {
-        if (@intFromEnum(level) < @intFromEnum(Config.min_level)) return;
         const pool = Pool.getPool() catch return;
+        if (@intFromEnum(level) < @intFromEnum(pool.config.min_level)) return;
 
-        if (pool.owns_file) {
-            const file_size = pool.file.getEndPos() catch return;
+        switch (pool.config.format) {
+            Format.standard => {}, // Create a standard log
+            Format.json => {}, // Create a JSON log
+        }
 
-            if (file_size > RotationConfig.max_file_size) {
-                RotationConfig.fileRotation(pool.allocator) catch return;
-                // std.debug.print("Log exceeded file size\n", .{});
-                // return;
-            }
+        switch (pool.config.output) {
+            Output.file => |file_name| {
+                const file_size = pool.file.getEndPos() catch return;
+
+                if (file_size > RotationConfig.max_file_size) {
+                    RotationConfig.fileRotation(file_name, pool.allocator) catch return;
+                }
+            },
+            else => {},
         }
 
         Mutex.lock();
@@ -80,7 +83,7 @@ pub const Logger = struct {
         };
     }
 
-    /// This modifies the date buffer and time buffer to UTC time relative to UTC 1970-01-01.\n
+    /// This modifies the cached-timestamp to UTC time relative to UTC 1970-01-01.\n
     /// Make sure the amount of bytes used for date_buf and time_buf is 10 and 8 respectively.
     fn getCachedDateTime() void {
         const now = time.timestamp();
@@ -119,13 +122,10 @@ pub const Logger = struct {
 
     // The format of date is YYYY-MM-DD
     fn getDate(buf: []u8, timestamp: u64) void {
-        const s_per_day = time.s_per_day;
-        const epoch_year = time.epoch.epoch_year;
-
-        const days_since_epoch = timestamp / s_per_day;
+        const days_since_epoch = timestamp / time.s_per_day;
         const remaining_days = days_since_epoch % 365;
 
-        const current_year: u16 = @truncate(epoch_year + days_since_epoch / 365);
+        const current_year: u16 = @truncate(time.epoch.epoch_year + days_since_epoch / 365);
 
         // TODO: Not every month is 30 days long.
         const current_month: u8 = @truncate(remaining_days / 30);

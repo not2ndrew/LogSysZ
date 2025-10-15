@@ -1,7 +1,6 @@
 const std = @import("std");
 const con = @import("config.zig");
 const logger = @import("logger.zig");
-const rotation = @import("log_rotation.zig").FileRotation{};
 
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
@@ -17,16 +16,15 @@ pub const PoolError = error {
     PoolAlreadyCreated,
 };
 
-pub var initialized = false;
-var pool: Pool = undefined;
-
 pub const Pool = struct {
     writer: File.Writer,
-    writer_buffer: []u8,
     file: File,
     config: Config,
     allocator: Allocator,
     owns_file: bool,
+
+    var initialized = false;
+    var pool: Pool = undefined;
 
     pub fn init(allocator: Allocator, config: Config) !void {
         if (initialized) return PoolError.PoolAlreadyCreated;
@@ -56,7 +54,6 @@ pub const Pool = struct {
 
         pool = Pool{
             .writer = writer,
-            .writer_buffer = writer_buffer,
             .file = file,
             .config = config,
             .allocator = allocator,
@@ -68,7 +65,7 @@ pub const Pool = struct {
         if (!initialized) return;
 
         initialized = false;
-        self.allocator.free(self.writer_buffer);
+        self.allocator.free(self.writer.interface.buffer);
         if (self.owns_file) self.file.close();
     }
 

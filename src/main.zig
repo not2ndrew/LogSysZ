@@ -3,8 +3,11 @@ const Pool = @import("pool.zig").Pool;
 const logger = @import("logger.zig");
 const con = @import("config.zig");
 
-const Config = con.Config{};
+const Config = con.Config;
+const Output = con.Config.Output;
 const Logger = logger.Logger;
+
+const FILE_NAME = "access.log";
 
 pub fn main() !void {
     var debugAlloc = std.heap.DebugAllocator(.{}){};
@@ -12,7 +15,7 @@ pub fn main() !void {
 
     const allocator = debugAlloc.allocator();
 
-    const new_config = con.Config{ .output = con.Config.Output{ .file = "log.txt" } };
+    const new_config = Config{ .output = Output{ .file = FILE_NAME } };
 
     try Pool.init(allocator, new_config);
 
