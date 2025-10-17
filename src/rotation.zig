@@ -13,10 +13,11 @@ pub const RotationConfig = struct {
         const name = file_name[0..dot_index];
         const file_type = file_name[dot_index + 1..];
 
-        var i = self.max_files - 1;
-        while (i >= 1) : (i -= 1) {
-            const old_name = try std.fmt.allocPrint(allocator, "{s}{d}.{s}", .{name, i, file_type});
-            const new_name = try std.fmt.allocPrint(allocator, "{s}{d}.{s}", .{name, i + 1, file_type});
+        // Perform Log Rotation
+        var i = self.max_files;
+        while (i > 1) : (i -= 1) {
+            const old_name = try std.fmt.allocPrint(allocator, "{s}.{d}.{s}", .{name, i - 1, file_type});
+            const new_name = try std.fmt.allocPrint(allocator, "{s}.{d}.{s}", .{name, i, file_type});
             defer allocator.free(old_name);
             defer allocator.free(new_name);
 

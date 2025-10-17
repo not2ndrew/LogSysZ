@@ -4,6 +4,7 @@ const Pool = @import("pool.zig").Pool;
 var RotationConfig = @import("rotation.zig").RotationConfig{};
 
 const Output = con.Config.Output;
+const Format = con.Config.Format;
 
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
@@ -52,7 +53,15 @@ pub const Logger = struct {
                 const file_size = pool.file.getEndPos() catch return;
 
                 if (file_size > RotationConfig.max_file_size) {
+                    const interface = &pool.writer.interface;
+                    interface.flush() catch return;
+                    pool.file.close();
+
                     RotationConfig.fileRotation(file_name, pool.allocator) catch return;
+
+                    const new_file = std.fs.cwd().openFile(file_name, .{ .mode = .read_write }) catch return;
+                    pool.file = new_file;
+                    pool.writer = std.fs.File.Writer.init(new_file, interface.buffer);
                 }
             },
             else => {},
@@ -63,19 +72,34 @@ pub const Logger = struct {
 
         getCachedDateTime();
 
+        switch (pool.config.format) {
+            Format.standard => formatStandardLog(level, fmt, args),
+            Format.json => formatJsonLog(level, fmt, args),
+        }
+    }
+
+    fn formatStandardLog(comptime level: Level, comptime fmt: []const u8, comptime args: anytype) void {
+        const pool = Pool.getPool() catch return;
         const writer_interface = &pool.writer.interface;
 
-        writer_interface.print("[{s} {s}] [{s}]: ", .{cached_timestamp[0..10], cached_timestamp[11..], @tagName(level)}) catch {
-            std.debug.print("Writing Date-Time Error\n", .{});
-            return;
-        };
-        writer_interface.print(fmt, args) catch {
-            std.debug.print("Writing log Error\n", .{});
-            return;
-        };
-        writer_interface.flush() catch {
-            std.debug.print("Flushing Error\n", .{});
-        };
+        writer_interface.print("[{s}] [{s}]: ", .{cached_timestamp[0..], @tagName(level)}) catch return;
+        writer_interface.print(fmt, args) catch return;
+        writer_interface.print("\n", .{}) catch return;
+        writer_interface.flush() catch return;
+    }
+
+    fn formatJsonLog(comptime level: Level, comptime fmt: []const u8, comptime args: anytype) void {
+        const pool = Pool.getPool() catch return;
+        const writer_interface = &pool.writer.interface;
+
+        writer_interface.print(
+            "{{\"timestamp\":\"{s}\",\"level\":\"{s}\",\"message\":\"",
+            .{ cached_timestamp[0..],
+            @tagName(level) },
+        ) catch return;
+        writer_interface.print(fmt, args) catch return;
+        writer_interface.print("\"}}\n", .{}) catch return;
+        writer_interface.flush() catch return;
     }
 
     /// This modifies the cached-timestamp to UTC time relative to UTC 1970-01-01.\n

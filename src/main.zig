@@ -15,13 +15,13 @@ pub fn main() !void {
 
     const allocator = debugAlloc.allocator();
 
-    const new_config = Config{ .output = Output{ .file = FILE_NAME } };
+    const new_config = Config{ .output = Output{ .file = FILE_NAME }, .format = Config.Format.standard };
 
     try Pool.init(allocator, new_config);
 
     var pool = try Pool.getPool();
     defer pool.deinit();
 
-    Logger.info("Hello World\n", .{});
-    Logger.info("Goodbye\n", .{});
+    Logger.info("Hello World", .{});
+    Logger.info("Goodbye", .{});
 }
